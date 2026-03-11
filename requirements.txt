@@ -1,9 +1,10 @@
 Flask
 gunicorn
 ultralytics
-torch
+torch --index-url https://download.pytorch.org/whl/cpu
 pandas
 numpy
 joblib
 matplotlib
 scikit-learn
+opencv-python
