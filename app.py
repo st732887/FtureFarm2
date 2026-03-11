@@ -13,13 +13,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+
 # -----------------------------
 # Flask setup
 # -----------------------------
-ap = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 
 # -----------------------------
 # Model paths
@@ -30,15 +32,17 @@ SCALER_X_PATH = "models/scaler_X.pkl"
 SCALER_Y_PATH = "models/scaler_y.pkl"
 LSTM_MODEL_PATH = "models/lstm.pth"
 
+
 # -----------------------------
 # Load models and data
 # -----------------------------
-y_mod = YOLO(YOLO_MODEL_PATH)
+yolo_model = YOLO(YOLO_MODEL_PATH)
 
 data = pd.read_csv(DATA_PATH).sort_values("Price Date")
 
 sc_x = joblib.load(SCALER_X_PATH)
 sc_y = joblib.load(SCALER_Y_PATH)
+
 
 # -----------------------------
 # Config
@@ -54,10 +58,12 @@ features = [
     "rainfall_mm"
 ]
 
+
 # -----------------------------
 # LSTM Model
 # -----------------------------
 class LSTMModel(nn.Module):
+
     def __init__(self, input_dim=5, hidden_dim=64, num_layers=2, output_dim=2):
         super().__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
@@ -67,9 +73,11 @@ class LSTMModel(nn.Module):
         out, _ = self.lstm(x)
         return self.fc(out[:, -1, :])
 
+
 model = LSTMModel()
 model.load_state_dict(torch.load(LSTM_MODEL_PATH, map_location="cpu"))
 model.eval()
+
 
 # -----------------------------
 # Prediction function
@@ -102,7 +110,6 @@ def predict_next_7_days():
         maxs.append(max_price)
 
         modal = (min_price + max_price) / 2
-
         last_weather = last_seq[-1, 3:]
 
         new_row = sc_x.transform([[
@@ -125,12 +132,12 @@ def predict_next_7_days():
 # -----------------------------
 # Routes
 # -----------------------------
-@ap.route("/")
+@app.route("/")
 def home():
     return render_template("dashboard.html")
 
 
-@ap.route("/predict")
+@app.route("/predict")
 def predict():
 
     mins, maxs = predict_next_7_days()
@@ -141,7 +148,7 @@ def predict():
     })
 
 
-@ap.route("/plot")
+@app.route("/plot")
 def plot():
 
     mins, maxs = predict_next_7_days()
@@ -151,7 +158,6 @@ def plot():
     plt.figure()
     plt.plot(days, mins, marker="o", label="Min Price")
     plt.plot(days, maxs, marker="o", label="Max Price")
-
     plt.fill_between(days, mins, maxs, alpha=0.3)
 
     plt.title("7-Day Price Forecast")
@@ -169,7 +175,7 @@ def plot():
     return send_file(buf, mimetype="image/png")
 
 
-@ap.route("/predict_seed", methods=["POST"])
+@app.route("/predict_seed", methods=["POST"])
 def predict_seed():
 
     if "image" not in request.files:
@@ -180,10 +186,9 @@ def predict_seed():
     filename = secure_filename(pic.filename)
 
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-
     pic.save(filepath)
 
-    result = y_mod(filepath)[0]
+    result = yolo_model(filepath)[0]
 
     class_name = result.names[result.probs.top1]
     confidence = float(result.probs.top1conf)
@@ -195,13 +200,20 @@ def predict_seed():
     })
 
 
-@ap.route("/uploads/<path:fname>")
+@app.route("/uploads/<path:fname>")
 def serve_file(fname):
     return send_from_directory(UPLOAD_FOLDER, fname)
 
 
 # -----------------------------
-# Run app
+# Run app (for local testing)
 # -----------------------------
 if __name__ == "__main__":
-    ap.run(debug=True)
+
+    port = int(os.environ.get("PORT", 10000))
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=True
+    )
